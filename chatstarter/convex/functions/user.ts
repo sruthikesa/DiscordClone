@@ -1,8 +1,8 @@
 import {
   internalMutation,
-  MutationCtx,
   query,
   QueryCtx,
+  MutationCtx,
 } from "../_generated/server";
 import { v } from "convex/values";
 
@@ -12,6 +12,7 @@ export const get = query({
   },
 });
 
+//define a mutation called create
 export const upsert = internalMutation({
   args: {
     username: v.string(),
@@ -37,7 +38,9 @@ export const upsert = internalMutation({
 });
 
 export const remove = internalMutation({
-  args: { clerkId: v.string() },
+  args: {
+    clerkId: v.string(),
+  },
   handler: async (ctx, { clerkId }) => {
     const user = await getUserByClerkId(ctx, clerkId);
     if (user) {

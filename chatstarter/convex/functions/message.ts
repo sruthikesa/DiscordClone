@@ -1,20 +1,22 @@
+// define functions that can be used to interact with the messages table
+import { mutation, query } from "../_generated/server";
 import { v } from "convex/values";
 import { authenticatedMutation, authenticatedQuery } from "./helpers";
 import { internal } from "../_generated/api";
 
+//update the messages api
 export const list = authenticatedQuery({
-  args: {
-    directMessage: v.id("directMessages"),
-  },
+  args: { directMessage: v.id("directMessages") },
   handler: async (ctx, { directMessage }) => {
     const member = await ctx.db
+      // finding if this user is a member of this specific thread
       .query("directMessageMembers")
       .withIndex("by_direct_message_user", (q) =>
         q.eq("directMessage", directMessage).eq("user", ctx.user._id)
       )
       .first();
     if (!member) {
-      throw new Error("You are not a member of this DM");
+      throw new Error("You are not a member of this direct message.");
     }
     const messages = await ctx.db
       .query("messages")
@@ -25,12 +27,12 @@ export const list = authenticatedQuery({
     return await Promise.all(
       messages.map(async (message) => {
         const sender = await ctx.db.get(message.sender);
-        const attatchment = message.attatchment
-          ? await ctx.storage.getUrl(message.attatchment)
+        const attachment = message.attachment
+          ? await ctx.storage.getUrl(message.attachment)
           : undefined;
         return {
           ...message,
-          attatchment,
+          attachment,
           sender,
         };
       })
@@ -40,32 +42,33 @@ export const list = authenticatedQuery({
 
 export const create = authenticatedMutation({
   args: {
+    //sender: v.string(), wont need this anymore since that is going to come from the current user
     content: v.string(),
-    attatchment: v.optional(v.id("_storage")),
+    attachment: v.optional(v.id("_storage")),
     directMessage: v.id("directMessages"),
   },
-  handler: async (ctx, { content, attatchment, directMessage }) => {
+  handler: async (ctx, { content, attachment, directMessage }) => {
+    //Checking if the user is allowed to message in this thread before we let them send a message
     const member = await ctx.db
+
       .query("directMessageMembers")
       .withIndex("by_direct_message_user", (q) =>
         q.eq("directMessage", directMessage).eq("user", ctx.user._id)
       )
       .first();
     if (!member) {
-      throw new Error("You are not a member of this DM");
+      throw new Error("You are not a member of this direct message.");
     }
-    const messageId = await ctx.db.insert("messages", {
+    await ctx.db.insert("messages", {
       content,
-      attatchment,
+      attachment,
       directMessage,
       sender: ctx.user._id,
     });
-    ctx.scheduler.runAfter(0, internal.functions.typing.remove, {
+
+    await ctx.scheduler.runAfter(0, internal.functions.typing.remove, {
       directMessage,
       user: ctx.user._id,
-    });
-    await ctx.scheduler.runAfter(0, internal.functions.moderation.run, {
-      id: messageId,
     });
   },
 });
@@ -77,14 +80,13 @@ export const remove = authenticatedMutation({
   handler: async (ctx, { id }) => {
     const message = await ctx.db.get(id);
     if (!message) {
-      throw new Error("Message not found");
-    }
-    if (message.sender !== ctx.user._id) {
-      throw new Error("You are not authorized to delete this message");
+      throw new Error("Message does not exist.");
+    } else if (message.sender !== ctx.user._id) {
+      throw new Error("You are not the sender of this message.");
     }
     await ctx.db.delete(id);
-    if (message.attatchment) {
-      await ctx.storage.delete(message.attatchment);
+    if (message.attachment) {
+      await ctx.storage.delete(message.attachment);
     }
   },
 });

@@ -1,29 +1,29 @@
 "use client";
-import { Button } from "@/src/components/ui/button";
-import { Input } from "@/src/components/ui/input";
-import {
-  SendIcon,
-  MoreVerticalIcon,
-  TrashIcon,
-  Loader,
-  LoaderIcon,
-} from "lucide-react";
-import { Avatar, AvatarFallback, AvatarImage } from "@radix-ui/react-avatar";
-import { ScrollArea, ScrollAreaViewport } from "@radix-ui/react-scroll-area";
-import { Doc, Id } from "../../../../../convex/_generated/dataModel";
+
+import { useMutation, useQuery } from "convex/react";
+// new hook as part of nextjs 19
+import { use, useRef, useState } from "react";
+import { api } from "../../../../../convex/_generated/api";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/src/components/ui/dropdown-menu";
-
-import { useMutation, useQuery } from "convex/react";
-import { use, useEffect, useRef, useState } from "react";
+} from "@/components/ui/dropdown-menu";
+import {
+  LoaderIcon,
+  MoreVerticalIcon,
+  PlusIcon,
+  SendIcon,
+  TrashIcon,
+} from "lucide-react";
+import { Doc, Id } from "../../../../../convex/_generated/dataModel";
 import { FunctionReturnType } from "convex/server";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { api } from "../../../../../convex/_generated/api";
-import { PlusIcon } from "@radix-ui/react-icons";
 import Image from "next/image";
 
 export default function MessagePage({
@@ -32,102 +32,100 @@ export default function MessagePage({
   params: Promise<{ id: Id<"directMessages"> }>;
 }) {
   const { id } = use(params);
+  //it will handle the promise of use params and return the id when its ready
+
+  // get the current user id
   const directMessage = useQuery(api.functions.dm.get, {
     id,
   });
+
+  //   fetch the messages
   const messages = useQuery(api.functions.message.list, { directMessage: id });
-  // Ref for the ScrollAreaViewport
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   if (!directMessage) {
     return null;
   }
+
   return (
-    <div className="flex flex-col flex-1 divide-y max-h-screen">
+    <div className="flex flex-1 flex-col divide-y max-h-screen">
       <header className="flex items-center gap-2 p-4">
         <Avatar className="size-8 border">
           <AvatarImage src={directMessage.user.image} />
-          <AvatarFallback></AvatarFallback>
+          <AvatarFallback />
         </Avatar>
-        <h1 className="font-semibold">{directMessage.user.username}</h1>
+        <h1 className="font-semibold">{directMessage.user!.username}</h1>
       </header>
-      <ScrollArea className="flex-1">
-        <ScrollAreaViewport ref={scrollAreaRef} className="h-full">
-          {messages?.map((message) => (
-            <MessageItem key={message._id} message={message} />
-          ))}
-        </ScrollAreaViewport>
+      <ScrollArea className="h-full py-4">
+        {/* <MessageItem /> for each message, we are going to render a mesg item which is going to be: */}
+        {messages?.map((message) => (
+          <MessageItem key={message._id} message={message} />
+        ))}
       </ScrollArea>
-      <TypingIndicator directMessage={directMessage._id} />
-      <div className="sticky bottom-0 bg-white">
-        <MessageInput
-          directMessage={directMessage._id}
-          scrollAreaRef={scrollAreaRef}
-        />
-      </div>
+      <TypingIndicator directMessage={id} />
+      <MessageInput directMessage={id} />
     </div>
   );
 }
 
+// To diplay the typing indicator
 function TypingIndicator({
   directMessage,
 }: {
   directMessage: Id<"directMessages">;
 }) {
-  const username = useQuery(api.functions.typing.list, { directMessage });
-  if (!username || username?.length === 0) {
+  const usernames = useQuery(api.functions.typing.list, { directMessage });
+
+  if (!usernames || usernames.length === 0) {
     return null;
   }
+
   return (
-    <div className="text-sm text-muted-forground px-4 py-2">
-      {username.join(",")} is typing...
+    <div className="text-sm text-muted-foreground px-4 py-2">
+      {usernames.join(", ")} is typing...
     </div>
   );
 }
+
+// 2 Components- list of messages and an option to create new messages
+
 type Message = FunctionReturnType<typeof api.functions.message.list>[number];
+
 function MessageItem({ message }: { message: Message }) {
+  const user = useQuery(api.functions.user.get);
+
   return (
-    <div className="flex items-center gap-2 px-4 py-2">
+    <div className="flex items-center px-4 gap-2 py-2">
       <Avatar className="size-8 border">
         {message.sender && <AvatarImage src={message.sender?.image} />}
-        <AvatarFallback></AvatarFallback>
+        <AvatarFallback />
       </Avatar>
       <div className="flex flex-col mr-auto">
         <p className="text-xs text-muted-foreground">
           {message.sender?.username ?? "Deleted User"}
         </p>
-        {message.deleted ? (
-          <>
-            <p className="text-sm text-destructive">
-              This message was deleted.
-              {message.deletedReason && (
-                <span> Reason: {message.deletedReason}</span>
-              )}
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="text-sm ">{message.content}</p>
-            {message.attatchment && (
-              <Image
-                src={message.attatchment}
-                alt="Attatchment"
-                width={300}
-                height={300}
-                className="rounded border overflow-hidden"
-              />
-            )}
-          </>
+        <p className="text-sm">{message.content}</p>
+        {message.attachment && (
+          <Image
+            src={message.attachment}
+            alt="Attachment"
+            width={300}
+            height={300}
+            className="rounded border overflow-hidden"
+          />
         )}
       </div>
       <MessageActions message={message} />
     </div>
   );
 }
+
+//delete button to delete msgs if you are the sender
 function MessageActions({ message }: { message: Message }) {
   const user = useQuery(api.functions.user.get);
   const removeMutation = useMutation(api.functions.message.remove);
+
   if (!user || message.sender?._id !== user._id) {
+    return null;
   }
   return (
     <DropdownMenu>
@@ -147,61 +145,59 @@ function MessageActions({ message }: { message: Message }) {
     </DropdownMenu>
   );
 }
+
 function MessageInput({
   directMessage,
-  scrollAreaRef,
 }: {
   directMessage: Id<"directMessages">;
-  scrollAreaRef: React.RefObject<HTMLDivElement>;
 }) {
   const [content, setContent] = useState("");
   const sendMessage = useMutation(api.functions.message.create);
   const sendTypingIndicator = useMutation(api.functions.typing.upsert);
-  const [file, setFile] = useState<File>();
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const generateUploadURL = useMutation(
+  const generateUploadUrl = useMutation(
     api.functions.message.generateUploadUrl
   );
-  const removeAttatchment = useMutation(api.functions.storage.remove);
-  const [attatchment, setAttatchment] = useState<Id<"_storage">>();
+  const [attachment, setAttachment] = useState<Id<"_storage">>();
+  const [file, setFile] = useState<File>();
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null); // linking the input file (attachment) to the button +
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) {
-      return;
-    }
+    if (!file) return;
     setFile(file);
     setIsUploading(true);
-    const url = await generateUploadURL();
+    const url = await generateUploadUrl();
     const res = await fetch(url, {
       method: "POST",
       body: file,
     });
     const { storageId } = (await res.json()) as { storageId: Id<"_storage"> };
-    setAttatchment(storageId);
+    setAttachment(storageId);
     setIsUploading(false);
   };
+
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
-      await sendMessage({ directMessage, attatchment, content });
+      await sendMessage({ directMessage, attachment, content });
       setContent("");
-      setAttatchment(undefined);
+      setAttachment(undefined);
       setFile(undefined);
-      if (scrollAreaRef.current) {
-        scrollAreaRef.current.scrollIntoView({
-          behavior: "smooth",
-          block: "end",
-        });
-      }
     } catch (error) {
-      toast.error("Failed to send message");
+      toast.error("Failed to send message", {
+        description:
+          error instanceof Error
+            ? error.message
+            : "An unknown error has occured.",
+      });
     }
   };
 
   return (
     <>
       <form className="flex items-end p-4 gap-2" onSubmit={handleSubmit}>
+        {/* button has two types - 1. submit and 2. button - that is dont submit anything when clicked on  */}
         <Button
           type="button"
           size="icon"
@@ -210,45 +206,27 @@ function MessageInput({
           }}
         >
           <PlusIcon />
-          <span className="sr-only">Attatchment</span>
+          <span className="sr-only">Attach</span>
         </Button>
-        <div className="flex flex-col flex-1 gap-2">
-          {file && (
-            <ImagePreview
-              file={file}
-              isUploading={isUploading}
-              onDelete={async () => {
-                if (attatchment) {
-                  const url = await removeAttatchment({
-                    storageId: attatchment,
-                  });
-                  console.log(url);
-                }
-                setAttatchment(undefined);
-                setFile(undefined);
-                if (fileInputRef.current) {
-                  fileInputRef.current!.value = "";
-                }
-              }}
-            />
-          )}
+        <div className="flex flex-col flex-1">
+          {file && <ImagePreview file={file} isUploading={isUploading} />}
           <Input
             placeholder="Message"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={(e) => {
-              if (content.length > 0) {
+              if (e.currentTarget.value.length > 0) {
                 sendTypingIndicator({ directMessage });
               }
             }}
           />
         </div>
+
         <Button size="icon">
           <SendIcon />
           <span className="sr-only">Send</span>
         </Button>
       </form>
-
       <input
         type="file"
         className="hidden"
@@ -262,14 +240,12 @@ function MessageInput({
 function ImagePreview({
   file,
   isUploading,
-  onDelete,
 }: {
   file: File;
   isUploading: boolean;
-  onDelete: () => void;
 }) {
   return (
-    <div className="relative size-40 overflow-hidden rounded border group">
+    <div className="relative size-40 overflow-hidden rounded border">
       <Image
         src={URL.createObjectURL(file)}
         alt="Attachment"
@@ -281,16 +257,6 @@ function ImagePreview({
           <LoaderIcon className="animate-spin size-8" />
         </div>
       )}
-      <Button
-        type="button"
-        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-        variant="destructive"
-        size="icon"
-        onClick={onDelete}
-      >
-        <TrashIcon />
-        <span className="sr-only">Delete</span>
-      </Button>
     </div>
   );
 }
